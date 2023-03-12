@@ -1,0 +1,108 @@
+
+
+
+#https://repmgr.org/docs/current/installation-packages.html
+#https://docs.fedoraproject.org/en-US/epel/
+
+# -- install the pg15 ---
+dnf config-manager --set-enabled powertools
+
+dnf install epel-release epel-next-release
+
+dnf config-manager --set-disable pgdg11
+dnf config-manager --set-disable pgdg13
+dnf config-manager --set-disable pgdg12
+dnf config-manager --set-disable pgdg14
+dnf config-manager --set-disable pgdg-common
+
+
+sudo dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+sudo dnf -qy module disable postgresql
+sudo dnf install -y postgresql15-server
+sudo /usr/pgsql-15/bin/postgresql-15-setup initdb
+sudo systemctl enable postgresql-15
+sudo systemctl start postgresql-15
+
+
+#  -- install the repmgr ---
+curl https://dl.enterprisedb.com/default/release/get/15/rpm | sudo bash
+
+#dnf repolist
+
+
+dnf groupinstall "Development Tools"
+
+dnf -y install repmgr15
+
+
+# --- install the repmgr ---
+# https://repmgr.org/docs/current/installation-source.html#INSTALLATION-REPMGR-SOURCE
+# https://repmgr.org/docs/repmgr.html
+
+mkdir /repmgr /repmgr_doc
+
+chown postgres:postgres /repmgr /repmgr_doc
+
+
+echo "PATH=$PATH:/usr/pgsql-15/bin">> /var/lib/pgsql/.bash_profile
+
+eval ./configure `pg_config --configure`
+
+./configure --prefix=/repmgr   
+
+make && make install 
+
+
+#Ensure pg_config for the target PostgreSQL version is in $PATH.
+
+
+--- Known issues ---
+-- E1 [postgres@node1 repmgr-5.3.3]$ make 
+[postgres@node1 ~]$ pg_config --pgxs
+/usr/pgsql-15/lib/pgxs/src/makefiles/pgxs.mk
+[postgres@node1 ~]$ /usr/pgsql-15/lib/pgxs/src/makefiles/pgxs.mk
+-bash: /usr/pgsql-15/lib/pgxs/src/makefiles/pgxs.mk: No such file or directory
+
+- solution : dnf -y install postgresql15-devel
+
+
+-- E2
+[postgres@node1 ~]$ pg_config --pgxs
+/usr/bin/ld: cannot find -lselinux
+/usr/bin/ld: cannot find -llz4
+/usr/bin/ld: cannot find -lxslt
+/usr/bin/ld: cannot find -lxml2
+/usr/bin/ld: cannot find -lpam
+/usr/bin/ld: cannot find -lssl
+/usr/bin/ld: cannot find -lcrypto
+/usr/bin/ld: cannot find -lgssapi_krb5
+/usr/bin/ld: cannot find -lreadline
+collect2: error: ld returned 1 exit status
+make: *** [Makefile:82: repmgr] Error 1
+
+- solution: 
+rpm -qa --queryformat '%{NAME}\t%{ARCH}\n'  | grep postgresql15-devel
+
+dnf -y install libselinux libselinux-devel lz4-devel libxslt-devel pam-devel libxml2 libxml2-devel openssl-devel  crypto-devel  cyrus-sasl-gssapi readline readline-devel flex
+	
+
+
+-- E3:
+[postgres@node1 repmgr-5.3.3]$ make install
+Building against PostgreSQL 15
+/usr/bin/mkdir -p '/usr/pgsql-15/lib'
+/usr/bin/mkdir -p '/usr/pgsql-15/share/extension'
+/usr/bin/mkdir -p '/usr/pgsql-15/share/extension'
+/usr/bin/mkdir -p '/usr/pgsql-15/bin'
+/usr/bin/install -c -m 755  repmgr.so '/usr/pgsql-15/lib/repmgr.so'
+/usr/bin/install: cannot remove '/usr/pgsql-15/lib/repmgr.so': Permission denied
+make: *** [/usr/pgsql-15/lib/pgxs/src/makefiles/../../src/Makefile.shlib:461: install-lib-shared] Error 1
+
+- solution:
+
+If building repmgr as a regular user, then doing the install into the system
+directories using sudo, the syntax is hard.  `pg_config` won't be in root's
+path either.  The following recipe should work:
+
+sudo PATH="/usr/bin/psql/bin:$PATH" make USE_PGXS=1 install 
+
